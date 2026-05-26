@@ -81,17 +81,26 @@ jobs:
                 --package-type Image \
                 --code ImageUri=$IMAGE_URI \
                 --role $EXISTING_ROLE
+                
+              echo "Waiting for the new function to be active..."
+              aws lambda wait function-active-v2 --function-name $FUNCTION_NAME
             else
               echo "Existing function is already an Image type. Proceeding to update function code..."
               aws lambda update-function-code \
                 --function-name $FUNCTION_NAME \
                 --image-uri $IMAGE_URI
+                
+              echo "Waiting for the function code update to complete..."
+              aws lambda wait function-updated-v2 --function-name $FUNCTION_NAME
             fi
           fi
 
       # Update the Lambda environment variables dynamically using AWS CLI
       - name: Update Lambda Environment Configuration
         run: |
+          # Ensure any ongoing updates are completed before configuring environment variables
+          aws lambda wait function-updated-v2 --function-name your-menu
+          
           aws lambda update-function-configuration \
             --function-name your-menu \
             --environment "Variables={NODE_ENV=production,DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_USERNAME=${{ secrets.DB_USERNAME }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_NAME=${{ secrets.DB_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }},CORS_ORIGIN=${{ secrets.CORS_ORIGIN }},AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}}"
