@@ -31,7 +31,7 @@ WORKDIR /usr/src/app
 COPY package.json pnpm-lock.yaml ./
 
 # Install only the dependency packages needed for execution to limit bundle size
-RUN pnpm install --prod --frozen-lockfile
+RUN pnpm install --prod --frozen-lockfile --shamefully-hoist=true
 
 # ── Stage 3: Lightweight runner image ─────────────────────────────
 FROM node:22-alpine AS runner
