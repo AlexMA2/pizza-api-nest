@@ -1,4 +1,4 @@
-name: Deploy NestJS to Lambda
+name: Deploy NestJS Container to AWS Lambda
 
 on:
   push:
@@ -8,50 +8,49 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout Code
+        uses: actions/checkout@v4
 
-      - name: Install pnpm
-        uses: pnpm/action-setup@v3
+      # Log in to AWS using the provided credentials
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          version: 9
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Setup Node.js 22 (LTS)
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
+      # Log in to AWS Elastic Container Registry (ECR)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Run Tests
-        run: pnpm run test
-
-      - name: Build Application
-        run: pnpm run build
-
-      - name: Prune development dependencies
-        run: pnpm prune --prod
-
-      - name: Create ZIP Deployment Package
-        # We package only the necessary compiled files and production dependency node_modules
-        run: zip -r deploy.zip dist node_modules package.json
-
-      - name: Deploy ZIP to AWS Lambda
-        uses: appleboy/lambda-action@master
-        with:
-          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws_region: ${{ secrets.AWS_REGION }}
-          function_name: your-menu
-          zip_file: deploy.zip
-
-      - name: Update Lambda Function environment configuration
-        # Updates environment configurations to feed variables directly to NestJS config loaders on runtime
-        run: |
-          aws lambda update-function-configuration --function-name your-menu \
-            --environment "Variables={NODE_ENV=production,DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_USERNAME=${{ secrets.DB_USERNAME }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_NAME=${{ secrets.DB_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }},CORS_ORIGIN=${{ secrets.CORS_ORIGIN }},AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}}"
+      # Build the Lambda-compatible Docker image and push it to ECR
+      - name: Build, Tag, and Push Image to Amazon ECR
         env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }} # e.g. your-menu
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build the container using the Lambda-specific Dockerfile
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY:latest -f Dockerfile.lambda .
+          
+          # Push both the commit-specific tag and the 'latest' tag
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+          
+          # Save the image URI for the next step
+          echo "IMAGE_URI=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_ENV
+
+      # Update AWS Lambda to use the newly pushed Docker container image
+      - name: Update Lambda Function Code
+        run: |
+          aws lambda update-function-code \
+            --function-name your-menu \
+            --image-uri ${{ env.IMAGE_URI }}
+
+      # Update the Lambda environment variables dynamically
+      - name: Update Lambda Environment Configuration
+        run: |
+          aws lambda update-function-configuration \
+            --function-name your-menu \
+            --environment "Variables={NODE_ENV=production,DB_HOST=${{ secrets.DB_HOST }},DB_PORT=${{ secrets.DB_PORT }},DB_USERNAME=${{ secrets.DB_USERNAME }},DB_PASSWORD=${{ secrets.DB_PASSWORD }},DB_NAME=${{ secrets.DB_NAME }},JWT_SECRET=${{ secrets.JWT_SECRET }},JWT_EXPIRES_IN=${{ secrets.JWT_EXPIRES_IN }},CORS_ORIGIN=${{ secrets.CORS_ORIGIN }},AWS_S3_BUCKET=${{ secrets.AWS_S3_BUCKET }}}"
