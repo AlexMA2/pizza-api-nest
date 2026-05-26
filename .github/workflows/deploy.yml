@@ -24,11 +24,18 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # Ensure the ECR repository exists before pushing to it
+      - name: Create ECR Repository if not exists
+        env:
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME || 'your-menu' }}
+        run: |
+          aws ecr create-repository --repository-name $ECR_REPOSITORY || echo "Repository already exists or creation skipped"
+
       # Build the Lambda-compatible Docker image and push it to ECR
       - name: Build, Tag, and Push Image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY_NAME || 'your-menu' }}
           IMAGE_TAG: ${{ github.sha }}
         run: |
           # Build the container using the Lambda-specific Dockerfile
