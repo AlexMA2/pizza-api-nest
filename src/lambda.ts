@@ -71,5 +71,5 @@ export const handler: Handler = async (event: any, context: Context, callback: C
   }
 
   // Process the request through Serverless Express
-  return cachedServer(event, context, callback);
+  return await cachedServer(event, context, callback);
 };
