@@ -12,8 +12,12 @@ const logger = new Logger('LambdaBootstrap');
 
 export const handler: Handler = async (event: any, context: Context, callback: Callback) => {
   // Fix lambda path routing if needed for API Gateway proxy events
-  if (event.path === '/api' || event.path === '/api/') {
-    event.path = '/api';
+ 
+  event.path = event.rawPath || event.path;
+
+  // 2. Asegura que NestJS vea el prefijo /api que configuraste
+  if (event.path && !event.path.startsWith('/api')) {
+    event.path = `/api${event.path}`;
   }
 
   // Create the Express instance inside the container if it does not exist yet (cold start)
